@@ -13,8 +13,8 @@ import lombok.ToString;
 @Setter
 @ToString
 public class BaseParam implements Serializable {
-
-    /** 候选人的任期号  */
+ 
+	/** 候选人的任期号  */
     public long term;
 
     /** 被请求者 ID(ip:selfPort) */

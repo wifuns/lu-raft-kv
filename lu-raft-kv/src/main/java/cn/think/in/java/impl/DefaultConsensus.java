@@ -51,6 +51,7 @@ public class DefaultConsensus implements Consensus {
     public RvoteResult requestVote(RvoteParam param) {
         try {
             RvoteResult.Builder builder = RvoteResult.newBuilder();
+            //有其他人已经发起了选举
             if (!voteLock.tryLock()) {
                 return builder.term(node.getCurrentTerm()).voteGranted(false).build();
             }
@@ -96,6 +97,10 @@ public class DefaultConsensus implements Consensus {
 
 
     /**
+     *  1、无论成功失败首先设置返回值，也就是将自己的 term 返回给 leader。
+	 *	2、判断对方的 term 是否大于自身，如果大于自身，变成 follower，防止异步的选举任务误操作。同时更新选举时间和心跳时间。
+	 *	3、如果对方 term 小于自身，返回失败。不更新选举时间和心跳时间。以便触发选举。
+     * 
      * 附加日志(多个日志,为了提高效率) RPC
      *
      * 接收者实现：
@@ -133,13 +138,20 @@ public class DefaultConsensus implements Consensus {
             // 使用对方的 term.
             node.setCurrentTerm(param.getTerm());
 
-            //心跳
+            //日志为null时发送的是 心跳
             if (param.getEntries() == null || param.getEntries().length == 0) {
                 LOGGER.info("node {} append heartbeat success , he's term : {}, my term : {}",
                     param.getLeaderId(), param.getTerm(), node.getCurrentTerm());
                 return AentryResult.newBuilder().term(node.getCurrentTerm()).success(true).build();
             }
+           /* 再来看看日志接收者的实现步骤：
 
+		           1、和心跳一样，要先检查对方 term，如果 term 都不对，那么就没什么好说的了。
+		           2、 如果日志不匹配，那么返回 leader，告诉他，减小 nextIndex 重试。
+		           3、如果本地存在的日志和 leader 的日志冲突了，以 leader 的为准，删除自身的。
+		           4、最后，将日志应用到状态机，更新本地的 commitIndex，返回 leader 成功。*/
+
+           
             // 真实日志
             // 第一次
             if (node.getLogModule().getLastIndex() != 0 && param.getPrevLogIndex() != 0) {

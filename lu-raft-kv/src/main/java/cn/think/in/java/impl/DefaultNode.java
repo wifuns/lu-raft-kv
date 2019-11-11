@@ -550,7 +550,7 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
             }
 
             long current = System.currentTimeMillis();
-            // 基于 RAFT 的随机时间,解决冲突.
+            // 基于 RAFT 的随机时间,解决冲突.  随机的时间间隔 . 必须超时了才能选举
             electionTime = electionTime + ThreadLocalRandom.current().nextInt(50);
             if (current - preElectionTime < electionTime) {
                 return;
@@ -688,7 +688,14 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
         }
     }
 
-
+    /**
+     * 1、首先自己必须是 leader 才能发送心跳。
+	 * 2、必须满足 5 秒的时间间隔。
+	 * 3、并发的向其他 follower 节点发送心跳。
+	 * 4、心跳参数包括自身的 ID，自身的 term，以便让对方检查 term，防止网络分区导致的脑裂。
+	 * 5、如果任意 follower 的返回值的 term 大于自身，说明自己分区了，那么需要变成 follower，并更新自己的 term。然后重新发起选举。
+	 *
+     */
     class HeartBeatTask implements Runnable {
 
         @Override
