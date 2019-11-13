@@ -15,11 +15,11 @@ import cn.think.in.java.entity.LogEntry;
  */
 public class DefaultLogModuleTest {
 
-    static {
-        System.setProperty("serverPort", "8779");
-        DefaultLogModule.dbDir = "/Users/cxs/code/lu-raft-revert/rocksDB-raft/" + System.getProperty("serverPort");
-        DefaultLogModule.logsDir = DefaultLogModule.dbDir + "/logModule";
-    }
+//    static {
+//        System.setProperty("serverPort", "8779");
+//        DefaultLogModule.dbDir = "/Users/cxs/code/lu-raft-revert/rocksDB-raft/" + System.getProperty("serverPort");
+//        DefaultLogModule.logsDir = DefaultLogModule.dbDir + "/logModule";
+//    }
 
     DefaultLogModule defaultLogs;
 

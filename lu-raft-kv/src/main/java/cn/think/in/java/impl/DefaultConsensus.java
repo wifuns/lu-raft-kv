@@ -50,6 +50,7 @@ public class DefaultConsensus implements Consensus {
     @Override
     public RvoteResult requestVote(RvoteParam param) {
         try {
+            LOGGER.info("开始选举");
             RvoteResult.Builder builder = RvoteResult.newBuilder();
             //有其他人已经发起了选举
             if (!voteLock.tryLock()) {
@@ -123,7 +124,7 @@ public class DefaultConsensus implements Consensus {
             if (param.getTerm() < node.getCurrentTerm()) {
                 return result;
             }
-
+            //重置时间
             node.preHeartBeatTime = System.currentTimeMillis();
             node.preElectionTime = System.currentTimeMillis();
             node.peerSet.setLeader(new Peer(param.getLeaderId()));
@@ -170,10 +171,12 @@ public class DefaultConsensus implements Consensus {
             }
 
             // 如果已经存在的日志条目和新的产生冲突（索引值相同但是任期号不同），删除这一条和之后所有的
-            LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex() + 1)));
+           LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex() + 1)));
+           // LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex())));
             if (existLog != null && existLog.getTerm() != param.getEntries()[0].getTerm()) {
                 // 删除这一条和之后所有的, 然后写入日志和状态机.
                 node.getLogModule().removeOnStartIndex(param.getPrevLogIndex() + 1);
+                // node.getLogModule().removeOnStartIndex(param.getPrevLogIndex());
             } else if (existLog != null) {
                 // 已经有日志了, 不能重复写入.
                 result.setSuccess(true);

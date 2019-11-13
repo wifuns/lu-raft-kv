@@ -4,6 +4,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+import cn.think.in.java.impl.DefaultLogModule;
+
 /**
  *
  * 节点集合. 去重.
@@ -22,10 +24,19 @@ public class PeerSet implements Serializable {
     private PeerSet() {
     }
 
+    private static final ThreadLocal<PeerSet> NODE_INFO = new ThreadLocal<PeerSet>();
     public static PeerSet getInstance() {
-        return PeerSetLazyHolder.INSTANCE;
-    }
-
+    	//改成每个线程一个实例 
+    	if(NODE_INFO.get() == null){
+    		PeerSet nodeInfo = new PeerSet();
+    		NODE_INFO.set(nodeInfo);
+    		return nodeInfo;
+    	}else{
+    		return NODE_INFO.get();
+    	}
+    	//PeerSetLazyHolder.INSTANCE;
+    }  
+     
     private static class PeerSetLazyHolder {
 
         private static final PeerSet INSTANCE = new PeerSet();

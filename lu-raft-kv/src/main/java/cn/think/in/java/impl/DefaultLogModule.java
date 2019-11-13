@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 
 import cn.think.in.java.LogModule;
 import cn.think.in.java.entity.LogEntry;
+import cn.think.in.java.util.PortUtil;
+import cn.think.in.java.util.WorkId;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,26 +35,26 @@ public class DefaultLogModule implements LogModule {
 
 
     /** public just for test */
-    public static String dbDir;
-    public static String logsDir;
+    public  String dbDir;
+    public  String logsDir;
 
-    private static RocksDB logDb;
+    private  RocksDB logDb;
 
     public final static byte[] LAST_INDEX_KEY = "LAST_INDEX_KEY".getBytes();
 
     ReentrantLock lock = new ReentrantLock();
 
-    static {
-        if (dbDir == null) {
-            dbDir = "./rocksDB-raft/" + System.getProperty("serverPort");
-        }
-        if (logsDir == null) {
-            logsDir = dbDir + "/logModule";
-        }
+    static { 
         RocksDB.loadLibrary();
     }
 
     private DefaultLogModule() {
+    	if (dbDir == null) {
+             dbDir = "./rocksDB-raft/" + PortUtil.currentPort();
+        }
+        if (logsDir == null) {
+             logsDir = dbDir + "/logModule";
+        }
         Options options = new Options();
         options.setCreateIfMissing(true);
 
@@ -67,13 +69,22 @@ public class DefaultLogModule implements LogModule {
         try {
             logDb = RocksDB.open(options, logsDir);
         } catch (RocksDBException e) {
-            LOGGER.warn(e.getMessage());
+            e.printStackTrace();
         }
     }
 
+    private static final ThreadLocal<DefaultLogModule> NODE_INFO = new ThreadLocal<DefaultLogModule>();
     public static DefaultLogModule getInstance() {
-        return DefaultLogsLazyHolder.INSTANCE;
-    }
+    	//改成每个线程一个实例 
+    	if(NODE_INFO.get() == null){
+    		DefaultLogModule nodeInfo = new DefaultLogModule();
+    		NODE_INFO.set(nodeInfo);
+    		return nodeInfo;
+    	}else{
+    		return NODE_INFO.get();
+    	}
+    	//return DefaultLogsLazyHolder.INSTANCE;
+    }  
 
     private static class DefaultLogsLazyHolder {
 
@@ -91,6 +102,7 @@ public class DefaultLogModule implements LogModule {
         boolean success = false;
         try {
             lock.tryLock(3000, MILLISECONDS);
+            //新增条目所以index+1
             logEntry.setIndex(getLastIndex() + 1);
             logDb.put(logEntry.getIndex().toString().getBytes(), JSON.toJSONBytes(logEntry));
             success = true;

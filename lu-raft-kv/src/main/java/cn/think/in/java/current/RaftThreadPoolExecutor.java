@@ -19,7 +19,8 @@ public class RaftThreadPoolExecutor extends ThreadPoolExecutor {
 
     public RaftThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
         BlockingQueue<Runnable> workQueue, RaftThreadPool.NameThreadFactory nameThreadFactory) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, nameThreadFactory);
+       // super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, nameThreadFactory);
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
     }
 
     @Override

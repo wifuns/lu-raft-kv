@@ -35,7 +35,8 @@ public class RaftThreadPool {
     }
 
     private static ScheduledExecutorService getScheduled() {
-        return new ScheduledThreadPoolExecutor(cup, new NameThreadFactory());
+        //return new ScheduledThreadPoolExecutor(cup, new NameThreadFactory());
+    	 return new ScheduledThreadPoolExecutor(cup);
     }
 
 
@@ -49,7 +50,7 @@ public class RaftThreadPool {
     }
 
     @SuppressWarnings("unchecked")
-    public static <T> Future<T> submit(Callable r) {
+    public static <T> Future<T> submit(Callable r) { 
         return te.submit(r);
     }
 

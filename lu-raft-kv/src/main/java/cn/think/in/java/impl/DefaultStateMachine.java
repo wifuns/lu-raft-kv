@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import cn.think.in.java.StateMachine;
 import cn.think.in.java.entity.Command;
 import cn.think.in.java.entity.LogEntry;
+import cn.think.in.java.util.PortUtil;
+import cn.think.in.java.util.WorkId;
 
 /**
  *
@@ -25,25 +27,26 @@ public class DefaultStateMachine implements StateMachine {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultStateMachine.class);
 
     /** public just for test */
-    public static String dbDir;
-    public static String stateMachineDir;
+    public String dbDir;
+    public String stateMachineDir;
 
-    public static RocksDB machineDb;
+    public RocksDB machineDb;
 
-    static {
-        if (dbDir == null) {
-            dbDir = "./rocksDB-raft/" + System.getProperty("serverPort");
-        }
-        if (stateMachineDir == null) {
-            stateMachineDir =dbDir + "/stateMachine";
-        }
+    static { 
         RocksDB.loadLibrary();
     }
 
 
     private DefaultStateMachine() {
-        synchronized (this) {
+        synchronized (DefaultStateMachine.class) {
             try {
+            	if(dbDir == null) {
+                     //dbDir = "./rocksDB-raft/" + System.getProperty("serverPort");
+                 	dbDir = "./rocksDB-raft/" + PortUtil.currentPort();
+                }
+                if (stateMachineDir == null) {
+                     stateMachineDir =dbDir + "/stateMachine";
+                }
                 File file = new File(stateMachineDir);
                 boolean success = false;
                 if (!file.exists()) {
@@ -57,14 +60,23 @@ public class DefaultStateMachine implements StateMachine {
                 machineDb = RocksDB.open(options, stateMachineDir);
 
             } catch (RocksDBException e) {
-                LOGGER.info(e.getMessage());
+                e.printStackTrace();
             }
         }
     }
 
-    public static DefaultStateMachine getInstance() {
-        return DefaultStateMachineLazyHolder.INSTANCE;
-    }
+    private static final ThreadLocal<DefaultStateMachine> NODE_INFO = new ThreadLocal<DefaultStateMachine>();
+    public static synchronized DefaultStateMachine getInstance() {
+    	//改成每个线程一个实例 
+    	if(NODE_INFO.get() == null){
+    		DefaultStateMachine nodeInfo = new DefaultStateMachine();
+    		NODE_INFO.set(nodeInfo);
+    		return nodeInfo;
+    	}else{
+    		return NODE_INFO.get();
+    	}
+    	//return DefaultStateMachineLazyHolder.INSTANCE;
+    } 
 
     private static class DefaultStateMachineLazyHolder {
 

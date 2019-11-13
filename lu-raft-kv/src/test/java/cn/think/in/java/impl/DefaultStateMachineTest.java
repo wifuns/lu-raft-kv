@@ -13,11 +13,11 @@ import cn.think.in.java.entity.LogEntry;
  */
 public class DefaultStateMachineTest {
 
-    static {
-        System.setProperty("serverPort", "8777");
-        DefaultStateMachine.dbDir = "/Users/cxs/code/lu-raft-revert/rocksDB-raft/" + System.getProperty("serverPort");
-        DefaultStateMachine.stateMachineDir = DefaultStateMachine.dbDir + "/stateMachine";
-    }
+//    static {
+//        System.setProperty("serverPort", "8777");
+//        DefaultStateMachine.dbDir = "/Users/cxs/code/lu-raft-revert/rocksDB-raft/" + System.getProperty("serverPort");
+//        DefaultStateMachine.stateMachineDir = DefaultStateMachine.dbDir + "/stateMachine";
+//    }
     DefaultStateMachine machine;
 
     @Before
