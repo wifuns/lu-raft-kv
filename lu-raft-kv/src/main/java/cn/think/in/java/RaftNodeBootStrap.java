@@ -4,7 +4,6 @@ import java.util.Arrays;
 
 import cn.think.in.java.common.NodeConfig;
 import cn.think.in.java.impl.DefaultNode;
-import cn.think.in.java.impl.DefaultStateMachine;
 import cn.think.in.java.util.PortUtil;
 
 /**
@@ -20,7 +19,7 @@ public class RaftNodeBootStrap {
     	String[] peerAddr = {"localhost:8775","localhost:8776","localhost:8777", "localhost:8778", "localhost:8779"};
 		 
     	for(String peer : peerAddr){
-    		new Thread(new Server(peer.split(":")[1],peerAddr)).start();
+    		new Thread(new Server(peer,peerAddr)).start();
     	}
     	//下面的方法是不对的。因为是线程池，那么线程就是固定的，我们要实现每个端口一个线程
 		/*CompletableFuture<Void>[] deptFuture = Arrays.stream(peerAddr).map(group -> CompletableFuture.runAsync(
@@ -41,9 +40,11 @@ public class RaftNodeBootStrap {
 		public void run(){
 			
 	        NodeConfig config = new NodeConfig();
-	        PortUtil.setPort(Integer.valueOf(port));
+	       
+	        PortUtil.setPort(Integer.valueOf(port.split(":")[1]));
+	        PortUtil.setPeer(port);
 	        // 自身节点
-	        config.setSelfPort(Integer.valueOf(port));
+	        config.setSelfPort(Integer.valueOf(port.split(":")[1]));
 
 	        // 其他节点地址
 	        config.setPeerAddrs(Arrays.asList(peerAddr));

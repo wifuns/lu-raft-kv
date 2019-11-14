@@ -36,7 +36,7 @@ public class DefaultConsensus implements Consensus {
     public final ReentrantLock voteLock = new ReentrantLock();
     public final ReentrantLock appendLock = new ReentrantLock();
 
-    public DefaultConsensus(DefaultNode node) {
+    public DefaultConsensus(DefaultNode node) { 
         this.node = node;
     }
 
@@ -63,8 +63,8 @@ public class DefaultConsensus implements Consensus {
             }
 
             // (当前节点并没有投票 或者 已经投票过了且是对方节点) && 对方日志和自己一样新
-            LOGGER.info("node {} current vote for [{}], param candidateId : {}", node.peerSet.getSelf(), node.getVotedFor(), param.getCandidateId());
-            LOGGER.info("node {} current term {}, peer term : {}", node.peerSet.getSelf(), node.getCurrentTerm(), param.getTerm());
+            LOGGER.info(" node {} current vote for [{}], param candidateId : {}", node.peerSet.getSelf(), node.getVotedFor(), param.getCandidateId());
+            LOGGER.info(" node {} current term {}, peer term : {}", node.peerSet.getSelf(), node.getCurrentTerm(), param.getTerm());
 
             if ((StringUtil.isNullOrEmpty(node.getVotedFor()) || node.getVotedFor().equals(param.getCandidateId()))) {
 
@@ -114,8 +114,9 @@ public class DefaultConsensus implements Consensus {
     @Override
     public AentryResult appendEntries(AentryParam param) {
         AentryResult result = AentryResult.fail();
-        try {
+        try { 
             if (!appendLock.tryLock()) {
+            	result.setNotChangeIndex(true);
                 return result;
             }
 
@@ -131,7 +132,7 @@ public class DefaultConsensus implements Consensus {
 
             // 够格
             if (param.getTerm() >= node.getCurrentTerm()) {
-                LOGGER.debug("node {} become FOLLOWER, currentTerm : {}, param Term : {}, param serverId",
+                LOGGER.debug( " node {} become FOLLOWER, currentTerm : {}, param Term : {}, param serverId",
                     node.peerSet.getSelf(), node.currentTerm, param.getTerm(), param.getServerId());
                 // 认怂
                 node.status = NodeStatus.FOLLOWER;
@@ -141,9 +142,9 @@ public class DefaultConsensus implements Consensus {
 
             //日志为null时发送的是 心跳
             if (param.getEntries() == null || param.getEntries().length == 0) {
-                LOGGER.info("node {} append heartbeat success , he's term : {}, my term : {}",
-                    param.getLeaderId(), param.getTerm(), node.getCurrentTerm());
-                return AentryResult.newBuilder().term(node.getCurrentTerm()).success(true).build();
+                //LOGGER.info(" node {} append heartbeat success , he's term : {}, my term : {}",
+                    //param.getLeaderId(), param.getTerm(), node.getCurrentTerm());
+                return AentryResult.builder().term(node.getCurrentTerm()).success(true).build();
             }
            /* 再来看看日志接收者的实现步骤：
 
@@ -170,21 +171,20 @@ public class DefaultConsensus implements Consensus {
 
             }
 
-            // 如果已经存在的日志条目和新的产生冲突（索引值相同但是任期号不同），删除这一条和之后所有的
-           LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex() + 1)));
-           // LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex())));
+            // 检测新增的数据是否存在 getPrevLogIndex 是同步完成后的共识日志index,所以新增的 就是 getPrevLogIndex + 1
+            LogEntry existLog = node.getLogModule().read(((param.getPrevLogIndex() + 1))); 
             if (existLog != null && existLog.getTerm() != param.getEntries()[0].getTerm()) {
                 // 删除这一条和之后所有的, 然后写入日志和状态机.
-                node.getLogModule().removeOnStartIndex(param.getPrevLogIndex() + 1);
-                // node.getLogModule().removeOnStartIndex(param.getPrevLogIndex());
+            	node.getLogModule().removeOnStartIndex(param.getPrevLogIndex() + 1); 
             } else if (existLog != null) {
                 // 已经有日志了, 不能重复写入.
                 result.setSuccess(true);
                 return result;
             }
 
-            // 写进日志并且应用到状态机
-            for (LogEntry entry : param.getEntries()) {
+            // 写进日志并且应用到状态机 
+            LOGGER.info("将数据写入本地数据库和状态机中DefaultNode:{}",node);
+            for (LogEntry entry : param.getEntries()) { 
                 node.getLogModule().write(entry);
                 node.stateMachine.apply(entry);
                 result.setSuccess(true);

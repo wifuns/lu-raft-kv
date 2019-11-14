@@ -53,6 +53,7 @@ import cn.think.in.java.rpc.Response;
 import cn.think.in.java.rpc.RpcClient;
 import cn.think.in.java.rpc.RpcServer;
 import cn.think.in.java.util.LongConvert;
+import cn.think.in.java.util.PortUtil;
 import lombok.Getter;
 import lombok.Setter;
 import raft.client.ClientKVAck;
@@ -253,9 +254,11 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
      * 4、如果跟随者崩溃或者运行缓慢，再或者网络丢包，领导人会不断的重复尝试附加日志条目 RPCs （尽管已经回复了客户端）直到所有的跟随者都最终存储了所有的日志条目。
      * @param request
      * @return
+     * @throws ExecutionException 
+     * @throws InterruptedException 
      */
     @Override
-    public synchronized ClientKVAck handlerClientRequest(ClientKVReq request) {
+    public synchronized ClientKVAck handlerClientRequest(ClientKVReq request){
 
         LOGGER.warn("handlerClientRequest handler {} operation,  and key : [{}], value : [{}]",
             ClientKVReq.Type.value(request.getType()), request.getKey(), request.getValue());
@@ -287,7 +290,7 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
         LOGGER.info("write logModule success, logEntry info : {}, log index : {}", logEntry, logEntry.getIndex());
 
         final AtomicInteger success = new AtomicInteger(0); 
-        List<Future<Boolean>> futureList = new CopyOnWriteArrayList<>();
+        List<CompletableFuture<Boolean>> futureList = new CopyOnWriteArrayList<>();
         
         int count = 0;
         //  复制到其他机器
@@ -300,12 +303,11 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
 
         CountDownLatch latch = new CountDownLatch(futureList.size());
         List<Boolean> resultList = new CopyOnWriteArrayList<>();
-
-        getRPCAppendResult(futureList, latch, resultList);
-
+ 
         try {
+        	getRPCAppendResult(futureList, latch, resultList);
             latch.await(4000, MILLISECONDS);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | ExecutionException e) {
             e.printStackTrace();
         }
 
@@ -352,125 +354,120 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
         }
     }
 
-    private void getRPCAppendResult(List<Future<Boolean>> futureList, CountDownLatch latch, List<Boolean> resultList) {
-        for (Future<Boolean> future : futureList) {
-            RaftThreadPool.execute(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                    	//指定时间内没有获取数据则放弃获取
-                        resultList.add(future.get(3000, MILLISECONDS));
-                    } catch (CancellationException | TimeoutException | ExecutionException | InterruptedException e) {
-                        e.printStackTrace();
-                        resultList.add(false);
-                    } finally {
-                        latch.countDown();
-                    }
-                }
-            });
+    private void getRPCAppendResult(List<CompletableFuture<Boolean>> futureList, CountDownLatch latch, List<Boolean> resultList) throws InterruptedException, ExecutionException {
+        for (CompletableFuture<Boolean> future : futureList){ 
+        	CompletableFuture.runAsync(() ->{
+        		 try {
+                 	//指定时间内没有获取数据则放弃获取
+                     resultList.add(future.get(3000, MILLISECONDS));
+                 } catch (CancellationException | TimeoutException | ExecutionException | InterruptedException e) {
+                     e.printStackTrace();
+                     resultList.add(false);
+                 } finally {
+                     latch.countDown();
+                 }
+        	}).get();
         }
     }
 
 
     /** 复制到其他机器  */
-    public Future<Boolean> replication(Peer peer, LogEntry entry) {
-
-        return RaftThreadPool.submit(new Callable() {
-            @Override
-            public Boolean call() throws Exception {
-
-                long start = System.currentTimeMillis(), end = start;
-
-                // 20 秒重试时间
-                while (end - start < 20 * 1000L) {
-
-                    AentryParam aentryParam = new AentryParam();
-                    aentryParam.setTerm(currentTerm);
-                    aentryParam.setServerId(peer.getAddr());
-                    aentryParam.setLeaderId(peerSet.getSelf().getAddr()); 
-                    aentryParam.setLeaderCommit(commitIndex);
-
-                    // 以我这边为准, 这个行为通常是成为 leader 后,首次进行 RPC 才有意义.
-                    Long nextIndex = nextIndexs.get(peer);
-                    LinkedList<LogEntry> logEntries = new LinkedList<>();
-                    //如果新发送的条目所以大于 上一次发送的所有 ，则将全部大于上传所以的条目都进行添加
-                    //否则只添加当前索引
-                    if (entry.getIndex() >= nextIndex) {
-                        for (long i = nextIndex; i <= entry.getIndex(); i++) {
-                            LogEntry l = logModule.read(i);
-                            if (l != null) {
-                                logEntries.add(l);
-                            }
-                        }
-                    } else {
-                        logEntries.add(entry);
-                    }
-                    // 最小的那个日志.
-                    LogEntry preLog = getPreLog(logEntries.getFirst());
-                    aentryParam.setPreLogTerm(preLog.getTerm());
-                    aentryParam.setPrevLogIndex(preLog.getIndex());
-
-                    aentryParam.setEntries(logEntries.toArray(new LogEntry[0]));
-
-                    Request request = Request.newBuilder()
-                        .cmd(Request.A_ENTRIES).obj(aentryParam).url(peer.getAddr()).build();
-
-                    try {
-                        Response response = getRpcClient().send(request);
-                        if (response == null) {
-                            return false;
-                        }
-                        AentryResult result = (AentryResult) response.getResult();
-                        if (result != null && result.isSuccess()) {
-                            LOGGER.info("append follower entry success , follower=[{}], entry=[{}]", peer, aentryParam.getEntries());
-                            // update 这两个追踪值    下一个要发送的条目索引
-                            nextIndexs.put(peer, entry.getIndex() + 1);
-                            //已发送的条目的索引
-                            matchIndexs.put(peer, entry.getIndex());
-                            return true;
-                        } else if (result != null) {
-                            // 对方比我大
-                            if (result.getTerm() > currentTerm) {
-                                LOGGER.warn("follower [{}] term [{}] than more self, and my term = [{}], so, I will become follower",
-                                    peer, result.getTerm(), currentTerm);
-                                //请求成功了就设置成当前的 任期
-                                currentTerm = result.getTerm();
-                                // 认怂, 变成跟随者
-                                status = NodeStatus.FOLLOWER;
-                                return false;
-                            } // 没我大, 却失败了,说明 index 不对.或者 term 不对.
-                            else {
-                                // 递减
-                                if (nextIndex == 0) {
-                                    nextIndex = 1L;
-                                }
-                                nextIndexs.put(peer, nextIndex - 1);
-                                LOGGER.warn("follower {} nextIndex not match, will reduce nextIndex and retry RPC append, nextIndex : [{}]", peer.getAddr(),
-                                    nextIndex);
-                                // 重来, 直到成功.
-                            }
-                        }
-
-                        end = System.currentTimeMillis();
-
-                    } catch (Exception e) {
-                        LOGGER.warn(e.getMessage(), e);
-                        // TODO 到底要不要放队列重试?
-//                        ReplicationFailModel model =  ReplicationFailModel.newBuilder()
-//                            .callable(this)
-//                            .logEntry(entry)
-//                            .peer(peer)
-//                            .offerTime(System.currentTimeMillis())
-//                            .build();
-//                        replicationFailQueue.offer(model);
-                        return false;
-                    }
-                }
-                // 超时了,没办法了
-                return false;
-            }
-        });
-
+    public CompletableFuture<Boolean> replication(Peer peer, LogEntry entry) {
+ 
+    	return CompletableFuture.supplyAsync(()->{
+    		
+			 long start = System.currentTimeMillis(), end = start;
+	
+	         // 20 秒重试时间
+	         while (end - start < 20 * 1000L) {
+	
+	             AentryParam aentryParam = new AentryParam();
+	             aentryParam.setTerm(currentTerm);
+	             aentryParam.setServerId(peer.getAddr());
+	             aentryParam.setLeaderId(peerSet.getSelf().getAddr()); 
+	             aentryParam.setLeaderCommit(commitIndex);
+	
+	             // 以我这边为准, 这个行为通常是成为 leader 后,首次进行 RPC 才有意义.
+	             Long nextIndex = nextIndexs.get(peer);
+	             LinkedList<LogEntry> logEntries = new LinkedList<>();
+	             //如果新发送的条目所以大于 上一次发送的所有 ，则将全部大于上传所以的条目都进行添加
+	             //否则只添加当前索引
+	             if (entry.getIndex() >= nextIndex) {
+	                 for (long i = nextIndex; i <= entry.getIndex(); i++) {
+	                     LogEntry l = logModule.read(i);
+	                     if (l != null) {
+	                         logEntries.add(l);
+	                     }
+	                 }
+	             } else {
+	                 logEntries.add(entry);
+	             }
+	            
+	             // 新增条目的上一条index
+	             LogEntry preLog = getPreLog(logEntries.getFirst());
+	             aentryParam.setPreLogTerm(preLog.getTerm());
+	             aentryParam.setPrevLogIndex(preLog.getIndex()); 
+	             aentryParam.setEntries(logEntries.toArray(new LogEntry[0]));
+	
+	             Request request = Request.newBuilder()
+	                 .cmd(Request.A_ENTRIES).obj(aentryParam).url(peer.getAddr()).build();
+	
+	             try {
+	                 Response response = getRpcClient().send(request);
+	                 if (response == null) {
+	                     return false;
+	                 }
+	                 AentryResult result = (AentryResult) response.getResult();
+	                 if (result != null && result.isSuccess()) {
+	                     LOGGER.info("append follower entry success , follower=[{}], entry=[{}]", peer, aentryParam.getEntries());
+	                     // update 这两个追踪值    下一个要发送的条目索引
+	                     nextIndexs.put(peer, entry.getIndex() + 1);
+	                     //已发送的条目的索引
+	                     matchIndexs.put(peer, entry.getIndex());
+	                     return true;
+	                 } else if (result != null) {
+	                     // 对方比我大
+	                     if (result.getTerm() > currentTerm) {
+	                         LOGGER.warn("follower [{}] term [{}] than more self, and my term = [{}], so, I will become follower",
+	                             peer, result.getTerm(), currentTerm);
+	                         //请求成功了就设置成当前的 任期
+	                         currentTerm = result.getTerm();
+	                         // 认怂, 变成跟随者
+	                         status = NodeStatus.FOLLOWER;
+	                         return false;
+	                     } // 没我大, 却失败了,说明 index 不对.或者 term 不对.
+	                     else {
+	                         // 递减
+	                         if (nextIndex == 0) {
+	                             nextIndex = 1L;
+	                         }
+	                         if(!result.isNotChangeIndex()){
+	                        	 nextIndexs.put(peer, nextIndex - 1);
+	                         } 
+	                         LOGGER.warn("follower {} nextIndex not match, will reduce nextIndex and retry RPC append, nextIndex : [{}]", peer.getAddr(),
+	                             nextIndex);
+	                         // 重来, 直到成功.
+	                     }
+	                 }
+	
+	                 end = System.currentTimeMillis();
+	
+	             } catch (Exception e) {
+	                 e.printStackTrace();
+	                 // TODO 到底要不要放队列重试?
+	//                     ReplicationFailModel model =  ReplicationFailModel.newBuilder()
+	//                         .callable(this)
+	//                         .logEntry(entry)
+	//                         .peer(peer)
+	//                         .offerTime(System.currentTimeMillis())
+	//                         .build();
+	//                     replicationFailQueue.offer(model);
+	                 return false;
+	             }
+	         }
+	         // 超时了,没办法了
+	         return false;
+	     }); 
     }
 
     private LogEntry getPreLog(LogEntry logEntry) {
@@ -658,13 +655,11 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
             // 等待结果.
             for (CompletableFuture<Response<RvoteResult>> future : deptFuture) {
                 
-                try { 
-                	LOGGER.info("---------------开始请求-----------");
+                try {  
                     Response<RvoteResult> response = (Response<RvoteResult>) future.get(3000, MILLISECONDS); 
                     if (response == null) {
                         continue;
-                    }
-                    LOGGER.info("--------------------------"+response.toString());
+                    } 
                     boolean isVoteGranted = response.getResult().isVoteGranted();
 
                     if (isVoteGranted) {
@@ -784,9 +779,10 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
             if (current - preHeartBeatTime < heartBeatTick) {
                 return;
             }
-            LOGGER.info("=========== NextIndex =============");
+            LOGGER.info(peerSet.getSelf().getAddr()+"=========== NextIndex =============");
             for (Peer peer : peerSet.getPeersWithOutSelf()) {
                 LOGGER.info("Peer {} nextIndex={}", peer.getAddr(), nextIndexs.get(peer));
+                break;
             }
 
             preHeartBeatTime = System.currentTimeMillis();
@@ -806,14 +802,14 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
                     param,
                     peer.getAddr());
 
-                RaftThreadPool.execute(() -> {
-                    try {
+                CompletableFuture.runAsync(()->{
+                	try {
                         Response response = getRpcClient().send(request);
                         AentryResult aentryResult = (AentryResult) response.getResult();
                         long term = aentryResult.getTerm();
                         //别人的任期大于自己，说明别人成了领导自己要跟随
                         if (term > currentTerm) {
-                            LOGGER.error("self will become follower, he's term : {}, my term : {}", term, currentTerm);
+                            //LOGGER.info("self will become follower, he's term : {}, my term : {}", term, currentTerm);
                             currentTerm = term;
                             votedFor = "";
                             status = NodeStatus.FOLLOWER;
@@ -821,7 +817,7 @@ public class DefaultNode<T> implements Node<T>, LifeCycle, ClusterMembershipChan
                     } catch (Exception e) {
                         LOGGER.error("HeartBeatTask RPC Fail, request URL : {} ", request.getUrl());
                     }
-                }, false);
+                });
             }
         }
     }

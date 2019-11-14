@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author 莫那·鲁道
  */
-public class RaftThreadPool {
+public class RaftThreadPool{
 
     private static int cup = Runtime.getRuntime().availableProcessors();
     private static int maxPoolSize = cup * 2;

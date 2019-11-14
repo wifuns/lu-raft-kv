@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import cn.think.in.java.exception.RaftRemotingException;
+import cn.think.in.java.util.PortUtil;
 
 /**
  *
@@ -25,8 +26,7 @@ public class DefaultRpcClient implements RpcClient {
     @Override
     public Response send(Request request) {
         Response result = null;
-        try {
-        	logger.info("---------开始发送请求----------{}",request.getCmd());
+        try { 
             result = (Response) CLIENT.invokeSync(request.getUrl(), request, 200000);
         } catch (RemotingException e) {
             e.printStackTrace();

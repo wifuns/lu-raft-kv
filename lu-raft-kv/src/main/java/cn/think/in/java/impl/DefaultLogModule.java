@@ -64,7 +64,7 @@ public class DefaultLogModule implements LogModule {
             success = file.mkdirs();
         }
         if (success) {
-            LOGGER.warn("make a new dir : " + logsDir);
+            LOGGER.warn(" make a new dir : " + logsDir);
         }
         try {
             logDb = RocksDB.open(options, logsDir);
@@ -106,7 +106,7 @@ public class DefaultLogModule implements LogModule {
             logEntry.setIndex(getLastIndex() + 1);
             logDb.put(logEntry.getIndex().toString().getBytes(), JSON.toJSONBytes(logEntry));
             success = true;
-            LOGGER.info("DefaultLogModule write rocksDB success, logEntry info : [{}]", logEntry);
+            LOGGER.info(" DefaultLogModule write rocksDB success, logEntry info : [{}]", logEntry);
         } catch (RocksDBException | InterruptedException e) {
             LOGGER.warn(e.getMessage());
         } finally {
@@ -143,7 +143,7 @@ public class DefaultLogModule implements LogModule {
                 ++count;
             }
             success = true;
-            LOGGER.warn("rocksDB removeOnStartIndex success, count={} startIndex={}, lastIndex={}", count, startIndex, getLastIndex());
+            LOGGER.warn(" rocksDB removeOnStartIndex success, count={} startIndex={}, lastIndex={}", count, startIndex, getLastIndex());
         } catch (InterruptedException | RocksDBException e) {
             LOGGER.warn(e.getMessage());
         } finally {
